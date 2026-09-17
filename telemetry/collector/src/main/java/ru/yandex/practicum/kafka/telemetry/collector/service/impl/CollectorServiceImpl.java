@@ -7,7 +7,7 @@ import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.clients.producer.RecordMetadata;
 import org.springframework.stereotype.Service;
-import ru.yandex.practicum.kafka.telemetry.collector.config.kafka.CollectorKafkaTopics;
+import ru.yandex.practicum.kafka.telemetry.collector.config.kafka.CollectorKafkaProperties;
 import ru.yandex.practicum.kafka.telemetry.collector.exception.KafkaSendException;
 import ru.yandex.practicum.kafka.telemetry.collector.mapper.CollectorMapper;
 import ru.yandex.practicum.kafka.telemetry.collector.model.hubs.events.HubEvent;
@@ -15,6 +15,7 @@ import ru.yandex.practicum.kafka.telemetry.collector.model.sensors.SensorEvent;
 import ru.yandex.practicum.kafka.telemetry.collector.service.CollectorService;
 import ru.yandex.practicum.kafka.telemetry.event.*;
 
+import java.time.Duration;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
@@ -23,112 +24,92 @@ import java.util.concurrent.TimeoutException;
 @Service
 @Slf4j
 @RequiredArgsConstructor
-public class CollectorServiceImpl implements CollectorService {
+public class CollectorServiceImpl implements CollectorService,AutoCloseable {
+    private static final long SEND_TIMEOUT_SECONDS = 10L;
+
     private final KafkaProducer<String, SpecificRecordBase> producer;
+    private final CollectorKafkaProperties properties;
 
     @Override
     public void sendSensorEvent(SensorEvent event) {
-        SensorEventAvro sensorEventAvro = CollectorMapper.mapToSensorEventAvro(event);
-        long timestamp = event.getTimestamp().toEpochMilli();
-        String key = event.getType().toString();
-        String topic = CollectorKafkaTopics.sensorTopic;
+        SensorEventAvro avro = CollectorMapper.mapToSensorEventAvro(event);
 
-        ProducerRecord<String, SpecificRecordBase> record = new ProducerRecord<>(
-                topic,
-                null,
-                timestamp,
-                key,
-                sensorEventAvro
+        send(
+                properties.getSensorTopic(),
+                event.getType().toString(),
+                event.getTimestamp().toEpochMilli(),
+                avro,
+                "датчика",
+                event.getId()
         );
-
-        try {
-            Future<RecordMetadata> send = producer.send(record);
-            RecordMetadata metadata = send.get(10L, TimeUnit.SECONDS);
-
-            log.info("Событие датчика успешно отправлено: topic={}, typeEvent={}",
-                    metadata.topic(), event.getType().name()
-            );
-
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            log.error("Прервана отправка события датчика: topic={}, id={}, ",
-                    topic,
-                    event.getId(),
-                    e
-            );
-
-            throw new KafkaSendException("Прервана отправка события датчика", e);
-
-        } catch (TimeoutException e) {
-            log.error("Таймаут ожидания Kafka: topic={}, id={}, ",
-                    topic,
-                    event.getId(),
-                    e
-            );
-
-            throw new KafkaSendException("Kafka не ответила вовремя на событие датчика", e);
-
-        } catch (ExecutionException e) {
-            Throwable cause = e.getCause() != null ? e.getCause() : e;
-            log.error("Произошла ошибка при отправке события датчика: topic={}, id={}, ",
-                    topic,
-                    event.getId(),
-                    cause);
-
-            throw new KafkaSendException("Не удалось отправить событие датчика", cause);
-        }
     }
 
     @Override
     public void sendHubEvent(HubEvent event) {
-        HubEventAvro hubEventAvro = CollectorMapper.mapToHubEventAvro(event);
-        long timestamp = event.getTimestamp().toEpochMilli();
-        String key = event.getType().toString();
-        String topic = CollectorKafkaTopics.hubTopic;
+        HubEventAvro avro = CollectorMapper.mapToHubEventAvro(event);
+
+        send(
+                properties.getHubTopic(),
+                event.getType().toString(),
+                event.getTimestamp().toEpochMilli(),
+                avro,
+                "хаба",
+                event.getHubId()
+        );
+    }
+
+    private void send(String topic,
+                      String key,
+                      long timestamp,
+                      SpecificRecordBase value,
+                      String eventType,
+                      String eventId) {
 
         ProducerRecord<String, SpecificRecordBase> record = new ProducerRecord<>(
                 topic,
                 null,
                 timestamp,
                 key,
-                hubEventAvro
+                value
         );
 
         try {
             Future<RecordMetadata> send = producer.send(record);
-            RecordMetadata metadata = send.get(10L, TimeUnit.SECONDS);
+            producer.flush();
+            RecordMetadata metadata = send.get(SEND_TIMEOUT_SECONDS, TimeUnit.SECONDS);
 
-            log.info("Событие хаба успешно отправлено: topic={}, typeEvent={}",
-                    metadata.topic(), event.getType().name()
+            log.info("Событие {} успешно отправлено: topic={}, typeEvent={}, partition={}, offset={}",
+                    eventType,
+                    metadata.topic(),
+                    key,
+                    metadata.partition(),
+                    metadata.offset()
             );
 
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
-            log.error("Прервана отправка события хаба: topic={}, hubId={}, ",
-                    topic,
-                    event.getHubId(),
-                    e
-            );
-
-            throw new KafkaSendException("Прервана отправка события хаба", e);
+            log.error("Прервана отправка события {}: topic={}, id={}",
+                    eventType, topic, eventId, e);
+            throw new KafkaSendException("Прервана отправка события " + eventType, e);
 
         } catch (TimeoutException e) {
-            log.error("Таймаут ожидания Kafka: topic={}, hubId={}, ",
-                    topic,
-                    event.getHubId(),
-                    e
-            );
-
-            throw new KafkaSendException("Kafka не ответила вовремя на событие хаба", e);
+            log.error("Таймаут ожидания Kafka: topic={}, id={}",
+                    topic, eventId, e);
+            throw new KafkaSendException(
+                    "Kafka не ответила вовремя на событие " + eventType, e);
 
         } catch (ExecutionException e) {
             Throwable cause = e.getCause() != null ? e.getCause() : e;
-            log.error("Произошла ошибка при отправке события хаба: topic={}, hubId={}, ",
-                    topic,
-                    event.getHubId(),
-                    cause);
-
-            throw new KafkaSendException("Не удалось отправить событие хаба", cause);
+            log.error("Ошибка при отправке события {}: topic={}, id={}",
+                    eventType, topic, eventId, cause);
+            throw new KafkaSendException(
+                    "Не удалось отправить событие " + eventType, cause);
         }
+    }
+
+    @Override
+    public void close() {
+        producer.flush();
+        producer.close(Duration.ofSeconds(10));
     }
 }

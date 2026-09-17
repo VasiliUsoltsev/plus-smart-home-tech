@@ -11,4 +11,6 @@ public class CollectorKafkaProperties {
     private String bootstrapServers;
     private String keySerializer;
     private String valueSerializer;
+    private String sensorTopic;
+    private String hubTopic;
 }

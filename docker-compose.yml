@@ -24,13 +24,13 @@ services:
       - kafka
     command: "bash -c \
                 'kafka-topics --create --topic telemetry.sensors.v1 \
-                             --partitions 1 --replication-factor 1 --if-not-exists \
+                             --partitions 5 --replication-factor 1 --if-not-exists \
                              --bootstrap-server kafka:29092 && \
                 kafka-topics --create --topic telemetry.snapshots.v1 \
                              --partitions 1 --replication-factor 1 --if-not-exists \
                              --bootstrap-server kafka:29092 && \
                 kafka-topics --create --topic telemetry.hubs.v1 \
-                             --partitions 1 --replication-factor 1 --if-not-exists \
+                             --partitions 4 --replication-factor 1 --if-not-exists \
                              --bootstrap-server kafka:29092'"
     init: true
 

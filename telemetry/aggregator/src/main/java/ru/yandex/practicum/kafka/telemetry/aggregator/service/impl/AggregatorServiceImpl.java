@@ -32,6 +32,8 @@ public class AggregatorServiceImpl implements AggregatorService {
                     .setTimestamp(event.getTimestamp())
                     .setSensorsState(new HashMap<>())
                     .build();
+            log.debug("Новый снапшот для hub = {}", hubId);
+
         }
 
         SensorStateAvro oldState = snapshot.getSensorsState().get(sensorId);
@@ -63,7 +65,7 @@ public class AggregatorServiceImpl implements AggregatorService {
 
         snapshots.put(hubId, updated);
 
-        log.info("Снапшот хаба {} обновлён, датчиков: {}", hubId, updatedStates.size());
+        log.debug("Снапшот hub = {} обновлён, датчиков: {}", hubId, updatedStates.size());
 
         return Optional.of(updated);
     }

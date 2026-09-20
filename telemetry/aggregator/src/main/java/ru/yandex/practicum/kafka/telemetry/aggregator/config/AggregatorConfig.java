@@ -9,6 +9,7 @@ import org.apache.kafka.clients.producer.ProducerConfig;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import ru.yandex.practicum.kafka.telemetry.aggregator.config.kafka.AggregatorKafkaProperties;
+import ru.yandex.practicum.kafka.telemetry.event.SensorEventAvro;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -29,9 +30,10 @@ public class AggregatorConfig {
     }
 
     @Bean
-    public KafkaConsumer<String, SpecificRecordBase> consumerFactory() {
+    public KafkaConsumer<String, SensorEventAvro> consumerFactory() {
         Map<String, Object> config = new HashMap<>();
         config.put(ConsumerConfig.CLIENT_ID_CONFIG, "AggregatorConsumer");
+        config.put(ConsumerConfig.GROUP_ID_CONFIG, properties.getGroup());
         config.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, properties.getBootstrapServers());
         config.put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, properties.getKeyDeserializer());
         config.put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, properties.getValueDeserializer());

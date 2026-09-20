@@ -44,6 +44,7 @@ public class AggregationStarter {
 
     public void start() {
         Runtime.getRuntime().addShutdownHook(new Thread(consumer::wakeup));
+        log.debug("Начинаем опрашивать топик {}", properties.getSnapshotTopic());
 
         try {
             consumer.subscribe(List.of(properties.getSensorTopic()));
@@ -71,17 +72,17 @@ public class AggregationStarter {
                 producer.flush();
                 consumer.commitSync(currentOffsets);
             } finally {
-                log.info("Закрываем поставщика");
+                log.debug("Закрываем поставщика");
                 producer.close();
 
-                log.info("Закрываем потребителя");
+                log.debug("Закрываем потребителя");
                 consumer.close();
             }
         }
     }
 
     private void handleRecord(ConsumerRecord<String, SensorEventAvro> inputRecord) throws InterruptedException {
-        log.info("топик = {}, партиция = {}, смещение = {}, значение: {}\n",
+        log.debug("топик = {}, партиция = {}, смещение = {}, значение: {}\n",
                 inputRecord.topic(), inputRecord.partition(), inputRecord.offset(), inputRecord.value());
 
         Optional<SensorsSnapshotAvro> result = aggregatorService.aggregate(inputRecord.value());
@@ -102,7 +103,7 @@ public class AggregationStarter {
                 producer.flush();
                 RecordMetadata metadata = send.get(SEND_TIMEOUT_SECONDS, TimeUnit.SECONDS);
 
-                log.info("Снапшот успешно отправлен: topic={}, hubId={}, offset={}",
+                log.debug("Снапшот успешно отправлен: topic={}, hubId={}, offset={}",
                         metadata.topic(),
                         snapshot.getHubId(),
                         metadata.offset()
@@ -151,7 +152,7 @@ public class AggregationStarter {
         if (count % 10 == 0) {
             consumer.commitAsync(currentOffsets, (offsets, exception) -> {
                 if (exception != null) {
-                    log.warn("Ошибка во время фиксации оффсетов: {}", offsets, exception);
+                    log.error("Ошибка во время фиксации оффсетов: {}", offsets, exception);
                 }
             });
         }

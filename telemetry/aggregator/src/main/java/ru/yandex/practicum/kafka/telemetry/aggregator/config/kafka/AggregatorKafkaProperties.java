@@ -16,4 +16,5 @@ public class AggregatorKafkaProperties {
     private String sensorTopic;
     private String snapshotTopic;
     private String maxPoll;
+    private String group;
 }

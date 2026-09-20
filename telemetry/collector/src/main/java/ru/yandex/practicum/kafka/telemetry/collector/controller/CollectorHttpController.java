@@ -15,7 +15,7 @@ import ru.yandex.practicum.kafka.telemetry.collector.service.CollectorService;
 @RequiredArgsConstructor
 @Validated
 @RequestMapping(path = "/events")
-public class CollectorController {
+public class CollectorHttpController {
     private final CollectorService collectorService;
 
     @PostMapping("/sensors")

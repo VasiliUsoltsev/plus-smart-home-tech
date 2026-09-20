@@ -39,7 +39,7 @@ public class CollectorServiceImpl implements CollectorService,AutoCloseable {
                 event.getType().toString(),
                 event.getTimestamp().toEpochMilli(),
                 avro,
-                "датчика",
+                "sensor",
                 event.getId()
         );
     }
@@ -53,7 +53,7 @@ public class CollectorServiceImpl implements CollectorService,AutoCloseable {
                 event.getType().toString(),
                 event.getTimestamp().toEpochMilli(),
                 avro,
-                "хаба",
+                "hub",
                 event.getHubId()
         );
     }

@@ -149,12 +149,10 @@ public class AggregationStarter {
                 new OffsetAndMetadata(record.offset() + 1)
         );
 
-        if (count % 10 == 0) {
-            consumer.commitAsync(currentOffsets, (offsets, exception) -> {
-                if (exception != null) {
-                    log.error("Ошибка во время фиксации оффсетов: {}", offsets, exception);
-                }
-            });
-        }
+        consumer.commitAsync(currentOffsets, (offsets, exception) -> {
+            if (exception != null) {
+                log.error("Ошибка во время фиксации оффсетов: {}", offsets, exception);
+            }
+        });
     }
 }

@@ -2,6 +2,7 @@ package ru.yandex.practicum.kafka.telemetry.analyzer.model;
 
 import jakarta.persistence.*;
 import lombok.*;
+import org.hibernate.annotations.BatchSize;
 
 import java.util.HashSet;
 import java.util.Set;
@@ -24,10 +25,12 @@ public class Scenario {
     private String name;
 
     @OneToMany(mappedBy = "scenario", cascade = CascadeType.ALL, orphanRemoval = true)
+    @BatchSize(size = 50)
     @Builder.Default
     private Set<ScenarioCondition> conditions = new HashSet<>();
 
     @OneToMany(mappedBy = "scenario", cascade = CascadeType.ALL, orphanRemoval = true)
+    @BatchSize(size = 50)
     @Builder.Default
     private Set<ScenarioAction> actions = new HashSet<>();
 }

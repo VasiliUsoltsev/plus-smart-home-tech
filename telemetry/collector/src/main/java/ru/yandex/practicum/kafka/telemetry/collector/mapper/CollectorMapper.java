@@ -2,6 +2,7 @@ package ru.yandex.practicum.kafka.telemetry.collector.mapper;
 
 import lombok.AccessLevel;
 import lombok.NoArgsConstructor;
+import ru.yandex.practicum.grpc.telemetry.event.*;
 import ru.yandex.practicum.kafka.telemetry.collector.model.hubs.DeviceAction;
 import ru.yandex.practicum.kafka.telemetry.collector.model.hubs.events.DeviceAddedEvent;
 import ru.yandex.practicum.kafka.telemetry.collector.model.hubs.ScenarioCondition;
@@ -10,8 +11,10 @@ import ru.yandex.practicum.kafka.telemetry.collector.model.hubs.events.HubEvent;
 import ru.yandex.practicum.kafka.telemetry.collector.model.hubs.events.ScenarioAddedEvent;
 import ru.yandex.practicum.kafka.telemetry.collector.model.hubs.events.ScenarioRemovedEvent;
 import ru.yandex.practicum.kafka.telemetry.collector.model.sensors.*;
+import ru.yandex.practicum.kafka.telemetry.collector.model.sensors.SensorEvent;
 import ru.yandex.practicum.kafka.telemetry.event.*;
 
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -80,7 +83,7 @@ public final class CollectorMapper {
                 builder.setPayload(temperatureSensorAvro);
                 break;
             default:
-                throw new IllegalArgumentException("Тип сенсора нераспознан: " + event.getType().name());
+                throw new IllegalArgumentException("Тип sensor нераспознан: " + event.getType().name());
         }
 
         return builder.build();
@@ -157,9 +160,152 @@ public final class CollectorMapper {
                 break;
 
             default:
-                throw new IllegalArgumentException("Тип события хаба нераспознан: " + event.getType().name());
+                throw new IllegalArgumentException("Тип hub события нераспознан: " + event.getType().name());
         }
 
         return builder.build();
+    }
+
+    public static SensorEvent mapToSensorEvent(SensorEventProto proto) {
+        SensorEvent result;
+
+        switch (proto.getPayloadCase()) {
+            case MOTION_SENSOR:
+                MotionSensorProto motionSensor = proto.getMotionSensor();
+
+                MotionSensorEvent motionSensorEvent = new MotionSensorEvent();
+                motionSensorEvent.setLinkQuality(motionSensor.getLinkQuality());
+                motionSensorEvent.setMotion(motionSensor.getMotion());
+                motionSensorEvent.setVoltage(motionSensor.getVoltage());
+                result = motionSensorEvent;
+                break;
+
+            case TEMPERATURE_SENSOR:
+                TemperatureSensorProto temperatureSensor = proto.getTemperatureSensor();
+
+                TemperatureSensorEvent temperatureSensorEvent = new TemperatureSensorEvent();
+                temperatureSensorEvent.setTemperatureC(temperatureSensor.getTemperatureC());
+                temperatureSensorEvent.setTemperatureF(temperatureSensor.getTemperatureF());
+                result = temperatureSensorEvent;
+                break;
+
+            case LIGHT_SENSOR:
+                LightSensorProto lightSensor = proto.getLightSensor();
+
+                LightSensorEvent lightSensorEvent = new LightSensorEvent();
+                lightSensorEvent.setLinkQuality(lightSensor.getLinkQuality());
+                lightSensorEvent.setLuminosity(lightSensor.getLuminosity());
+                result = lightSensorEvent;
+                break;
+
+            case CLIMATE_SENSOR:
+                ClimateSensorProto climateSensor = proto.getClimateSensor();
+
+                ClimateSensorEvent climateSensorEvent = new ClimateSensorEvent();
+                climateSensorEvent.setTemperatureC(climateSensor.getTemperatureC());
+                climateSensorEvent.setHumidity(climateSensor.getHumidity());
+                climateSensorEvent.setCo2Level(climateSensor.getCo2Level());
+                result = climateSensorEvent;
+                break;
+
+            case SWITCH_SENSOR:
+                SwitchSensorProto switchSensor = proto.getSwitchSensor();
+
+                SwitchSensorEvent switchSensorEvent = new SwitchSensorEvent();
+                switchSensorEvent.setState(switchSensor.getState());
+                result = switchSensorEvent;
+                break;
+
+            default:
+                throw new IllegalArgumentException(
+                        "Тип sensor нераспознан: " + proto.getPayloadCase());
+        }
+
+        result.setId(proto.getId());
+        result.setHubId(proto.getHubId());
+        result.setTimestamp(toInstant(proto.getTimestamp()));
+
+        return result;
+    }
+
+    public static HubEvent mapToHubEvent(HubEventProto proto) {
+        HubEvent result;
+
+        switch (proto.getPayloadCase()) {
+            case DEVICE_ADDED:
+                DeviceAddedEventProto deviceAdded = proto.getDeviceAdded();
+
+                DeviceAddedEvent deviceAddedEvent = new DeviceAddedEvent();
+                deviceAddedEvent.setId(deviceAdded.getId());
+                deviceAddedEvent.setDeviceType(deviceAdded.getType().name());
+                result = deviceAddedEvent;
+                break;
+
+            case DEVICE_REMOVED:
+                DeviceRemovedEventProto deviceRemoved = proto.getDeviceRemoved();
+
+                DeviceRemovedEvent deviceRemovedEvent = new DeviceRemovedEvent();
+                deviceRemovedEvent.setId(deviceRemoved.getId());
+                result = deviceRemovedEvent;
+                break;
+
+            case SCENARIO_ADDED:
+                ScenarioAddedEventProto scenarioAdded = proto.getScenarioAdded();
+
+                List<ScenarioCondition> conditions = new ArrayList<>();
+                for (ScenarioConditionProto conditionProto : scenarioAdded.getConditionList()) {
+                    ScenarioCondition condition = new ScenarioCondition();
+                    condition.setSensorId(conditionProto.getSensorId());
+                    condition.setType(conditionProto.getType().name());
+                    condition.setOperation(conditionProto.getOperation().name());
+                    condition.setValue(mapConditionValue(conditionProto));
+                    conditions.add(condition);
+                }
+
+                List<DeviceAction> actions = new ArrayList<>();
+                for (DeviceActionProto actionProto : scenarioAdded.getActionList()) {
+                    DeviceAction action = new DeviceAction();
+                    action.setSensorId(actionProto.getSensorId());
+                    action.setType(actionProto.getType().name());
+                    action.setValue(actionProto.hasValue() ? actionProto.getValue() : null);
+                    actions.add(action);
+                }
+
+                ScenarioAddedEvent scenarioAddedEvent = new ScenarioAddedEvent();
+                scenarioAddedEvent.setName(scenarioAdded.getName());
+                scenarioAddedEvent.setConditions(conditions);
+                scenarioAddedEvent.setActions(actions);
+                result = scenarioAddedEvent;
+                break;
+
+            case SCENARIO_REMOVED:
+                ScenarioRemovedEventProto scenarioRemoved = proto.getScenarioRemoved();
+
+                ScenarioRemovedEvent scenarioRemovedEvent = new ScenarioRemovedEvent();
+                scenarioRemovedEvent.setName(scenarioRemoved.getName());
+                result = scenarioRemovedEvent;
+                break;
+
+            default:
+                throw new IllegalArgumentException(
+                        "Тип hub нераспознан: " + proto.getPayloadCase());
+        }
+
+        result.setHubId(proto.getHubId());
+        result.setTimestamp(toInstant(proto.getTimestamp()));
+
+        return result;
+    }
+
+    private static Instant toInstant(com.google.protobuf.Timestamp timestamp) {
+        return Instant.ofEpochSecond(timestamp.getSeconds(), timestamp.getNanos());
+    }
+
+    private static Object mapConditionValue(ScenarioConditionProto condition) {
+        return switch (condition.getValueCase()) {
+            case BOOL_VALUE -> condition.getBoolValue();
+            case INT_VALUE -> condition.getIntValue();
+            case VALUE_NOT_SET -> null;
+        };
     }
 }

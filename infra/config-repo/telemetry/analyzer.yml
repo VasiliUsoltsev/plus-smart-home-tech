@@ -1,17 +1,21 @@
+#kafka
 kafka:
-  snapshot-consumer:
-    group-id: analyzer-snapshot-group
-    topic: telemetry.snapshots.v1
-    key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
-    value-deserializer: ru.yandex.practicum.collector.serialization.deserializer.SnapshotDeserializer
-    max-poll-records-config: 100
+  snapshot-consumer-group-id: analyzer-snapshot-group
+  snapshot-consumer-topic: telemetry.snapshots.v1
+  snapshot-consumer-key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+  snapshot-consumer-value-deserializer: ru.yandex.practicum.collector.serialization.deserializer.SnapshotDeserializer
+  snapshot-consumer-enable-auto-commit-config: "false"
+  snapshot-consumer-auto-offset-reset-config: earliest
+  snapshot-consumer-max-poll-records-config: 100
 
-  hub-event-consumer:
-    group-id: analyzer-hub-event-group
-    topic: telemetry.hubs.v1
-    key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
-    value-deserializer: ru.yandex.practicum.collector.serialization.deserializer.HubEventDeserializer
-    max-poll-records-config: 10
+  hub-event-consumer-group-id: analyzer-hub-event-group
+  hub-event-consumer-topic: telemetry.hubs.v1
+  hub-event-consumer-key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+  hub-event-consumer-value-deserializer: ru.yandex.practicum.collector.serialization.deserializer.HubEventDeserializer
+  hub-event-consumer-enable-auto-commit-config: "false"
+  hub-event-consumer-auto-offset-reset-config: earliest
+  hub-event-consumer-max-poll-records-config: 10
+
 
 # gRPC
 grpc:

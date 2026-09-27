@@ -1,0 +1,13 @@
+spring:
+  datasource:
+    url: jdbc:postgresql://localhost:5432/order_db
+    username: dbuser
+    password: "12345"
+    driver-class-name: org.postgresql.Driver
+  sql:
+    init:
+      mode: always
+      schema-locations: classpath:schema.sql
+
+server:
+  port: 0

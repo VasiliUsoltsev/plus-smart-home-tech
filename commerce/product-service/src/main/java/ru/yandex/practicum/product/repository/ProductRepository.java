@@ -7,13 +7,12 @@ import ru.yandex.practicum.product.entity.Product;
 import java.util.List;
 
 public interface ProductRepository extends JpaRepository<Product, Long> {
-    @Override
-    @EntityGraph(attributePaths = "category")
-    List<Product> findAll();
-
     @EntityGraph(attributePaths = "category")
     List<Product> findAllByCategoryId(Long categoryId);
 
     @EntityGraph(attributePaths = "category")
     List<Product> findByNameContainingIgnoreCase(String name);
+
+    @EntityGraph(attributePaths = "category")
+    List<Product> findAllByActiveTrue();
 }

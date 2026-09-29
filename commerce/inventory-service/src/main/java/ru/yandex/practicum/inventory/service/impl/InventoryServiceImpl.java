@@ -63,10 +63,9 @@ public class InventoryServiceImpl implements InventoryService {
 
     @Override
     public InventoryDto getByProductId(Long id) {
-        Inventory inventory = inventoryRepository.findByProductId(id)
+        return inventoryRepository.findByProductId(id)
+                .map(InventoryMapper::mapToInventoryDto)
                 .orElseThrow(() -> new NotFoundException(PRODUCT_NOT_FOUND_EXCEPTION + id));
-
-        return InventoryMapper.mapToInventoryDto(inventory);
     }
 
     @Override
@@ -90,12 +89,7 @@ public class InventoryServiceImpl implements InventoryService {
     }
 
     private Inventory getProductById(Long product_id) {
-        Optional<Inventory> optionalInventory = inventoryRepository.findByProductId(product_id);
-
-        if (optionalInventory.isEmpty()) {
-            throw new NotFoundException(PRODUCT_NOT_FOUND_EXCEPTION + product_id);
-        }
-
-        return optionalInventory.get();
+        return inventoryRepository.findByProductId(product_id)
+                .orElseThrow(() -> new NotFoundException(PRODUCT_NOT_FOUND_EXCEPTION + product_id));
     }
 }

@@ -90,6 +90,7 @@ public class InventoryServiceImpl implements InventoryService {
     }
 
     @Override
+    @Transactional
     public ReserveResponse release(ReserveRequest request) {
         Inventory inventory = getProductById(request.productId());
 

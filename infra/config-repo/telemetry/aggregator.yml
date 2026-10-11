@@ -1,0 +1,14 @@
+aggregator:
+  kafka:
+    consumer:
+      poll-timeout: 100ms
+
+kafka:
+  group: group.id
+  key-serializer: org.apache.kafka.common.serialization.StringSerializer
+  value-serializer: ru.yandex.practicum.collector.serialization.GeneralAvroSerializer
+  key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+  value-deserializer: ru.yandex.practicum.collector.serialization.deserializer.SensorEventDeserializer
+  sensorTopic: telemetry.sensors.v1
+  snapshotTopic: telemetry.snapshots.v1
+  maxPoll: 100

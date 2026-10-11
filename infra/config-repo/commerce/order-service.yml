@@ -8,6 +8,22 @@ spring:
     init:
       mode: always
       schema-locations: classpath:schema.sql
+  cloud:
+    openfeign:
+      client:
+        config:
+          product-service:
+            loggerLevel: basic
+          inventory-service:
+            connectTimeout: 1000
+            readTimeout: 2000
+          default:
+            connectTimeout: 2000
+            readTimeout: 3000
 
 server:
   port: 0
+
+logging:
+  level:
+    ru.yandex.practicum.order.client: DEBUG

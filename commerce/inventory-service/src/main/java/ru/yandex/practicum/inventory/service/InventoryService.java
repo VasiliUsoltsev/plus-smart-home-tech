@@ -17,4 +17,6 @@ public interface InventoryService {
     InventoryDto getByProductId(Long id);
 
     ReserveResponse reserve(ReserveRequest request);
+
+    ReserveResponse release(ReserveRequest request);
 }

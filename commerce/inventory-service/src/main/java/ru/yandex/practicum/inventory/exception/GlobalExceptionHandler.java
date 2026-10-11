@@ -73,4 +73,11 @@ public class GlobalExceptionHandler {
         log.error("Внутренняя ошибка сервера", e);
         return new ErrorResponse(HttpStatus.INTERNAL_SERVER_ERROR.value(), "Внутренняя ошибка сервера");
     }
+
+    @ExceptionHandler(InventoryReleaseException.class)
+    @ResponseStatus(HttpStatus.BAD_REQUEST)
+    public ErrorResponse handleInventoryRelease(InventoryReleaseException e) {
+        log.error("Некорректный запрос: {}", e.getMessage());
+        return new ErrorResponse(HttpStatus.BAD_REQUEST.value(), e.getMessage());
+    }
 }

@@ -14,7 +14,6 @@ import ru.yandex.practicum.order.repository.OrderRepository;
 import ru.yandex.practicum.order.service.OrderService;
 import ru.yandex.practicum.order.service.mapper.OrderMapper;
 
-import java.math.BigDecimal;
 import java.util.List;
 
 @Service
@@ -28,17 +27,7 @@ public class OrderServiceImpl implements OrderService {
 
     @Override
     @Transactional
-    public OrderDto create(CreateOrderRequest request) {
-        Order order = OrderMapper.mapToOrder(request);
-
-        order.setStatus(OrderStatus.CREATED);
-
-        List<OrderItem> items = order.getItems();
-        BigDecimal totalPrice = items.stream()
-                .map(item -> item.getPrice().multiply(BigDecimal.valueOf(item.getQuantity())))
-                .reduce(BigDecimal.ZERO, BigDecimal::add);
-        order.setTotalPrice(totalPrice);
-
+    public OrderDto saveOrder(Order order) {
         order = orderRepository.save(order);
 
         return OrderMapper.mapToOrderDto(order);

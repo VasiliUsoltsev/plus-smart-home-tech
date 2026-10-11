@@ -31,6 +31,13 @@ public class GlobalExceptionHandler {
         return new ErrorResponse(HttpStatus.CONFLICT.value(), e.getMessage());
     }
 
+    @ExceptionHandler(InventoryAlreadyExistsException.class)
+    @ResponseStatus(HttpStatus.CONFLICT)
+    public ErrorResponse handleInsufficientStock(InventoryAlreadyExistsException e) {
+        log.warn("Дубликат: {}", e.getMessage());
+        return new ErrorResponse(HttpStatus.CONFLICT.value(), e.getMessage());
+    }
+
     /**
      * Конфликт оптимистичной блокировки: два запроса одновременно изменили одну запись.
      * Клиент должен повторить запрос.
@@ -65,5 +72,12 @@ public class GlobalExceptionHandler {
     public ErrorResponse handleGeneral(Exception e) {
         log.error("Внутренняя ошибка сервера", e);
         return new ErrorResponse(HttpStatus.INTERNAL_SERVER_ERROR.value(), "Внутренняя ошибка сервера");
+    }
+
+    @ExceptionHandler(InventoryReleaseException.class)
+    @ResponseStatus(HttpStatus.BAD_REQUEST)
+    public ErrorResponse handleInventoryRelease(InventoryReleaseException e) {
+        log.error("Некорректный запрос: {}", e.getMessage());
+        return new ErrorResponse(HttpStatus.BAD_REQUEST.value(), e.getMessage());
     }
 }

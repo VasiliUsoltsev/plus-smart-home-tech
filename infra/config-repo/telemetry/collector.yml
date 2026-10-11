@@ -1,0 +1,12 @@
+grpc:
+  server:
+    port: 59091
+
+server:
+  port: 8080
+
+kafka:
+  key-serializer: "org.apache.kafka.common.serialization.StringSerializer"
+  value-serializer: "ru.yandex.practicum.collector.serialization.GeneralAvroSerializer"
+  sensorTopic: "telemetry.sensors.v1"
+  hubTopic: "telemetry.hubs.v1"

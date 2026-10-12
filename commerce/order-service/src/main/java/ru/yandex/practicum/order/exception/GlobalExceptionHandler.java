@@ -46,4 +46,18 @@ public class GlobalExceptionHandler {
         log.error("Ошибка при формировании заказа", e);
         return new ErrorResponse(HttpStatus.UNPROCESSABLE_ENTITY.value(), e.getMessage());
     }
+
+    @ExceptionHandler(ProductServiceUnavailableException.class)
+    @ResponseStatus(HttpStatus.SERVICE_UNAVAILABLE)
+    public ErrorResponse handleProductServiceUnavailable(ProductServiceUnavailableException e) {
+        log.warn("Недоступен сервис каталога:  {}", e.getMessage());
+        return new ErrorResponse(HttpStatus.SERVICE_UNAVAILABLE.value(), e.getMessage());
+    }
+
+    @ExceptionHandler(InventoryServiceUnavailableException.class)
+    @ResponseStatus(HttpStatus.SERVICE_UNAVAILABLE)
+    public ErrorResponse handleInventoryServiceUnavailable(InventoryServiceUnavailableException e) {
+        log.warn("Недоступен сервис склада:  {}", e.getMessage());
+        return new ErrorResponse(HttpStatus.SERVICE_UNAVAILABLE.value(), e.getMessage());
+    }
 }

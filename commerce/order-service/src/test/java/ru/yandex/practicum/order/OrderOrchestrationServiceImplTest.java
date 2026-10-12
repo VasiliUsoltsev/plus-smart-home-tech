@@ -19,7 +19,9 @@ import ru.yandex.practicum.order.dto.client.ProductDto;
 import ru.yandex.practicum.order.dto.client.ReserveRequest;
 import ru.yandex.practicum.order.entity.Order;
 import ru.yandex.practicum.order.entity.OrderStatus;
+import ru.yandex.practicum.order.exception.InventoryServiceUnavailableException;
 import ru.yandex.practicum.order.exception.OrderProcessingException;
+import ru.yandex.practicum.order.exception.ProductServiceUnavailableException;
 import ru.yandex.practicum.order.service.OrderService;
 import ru.yandex.practicum.order.service.impl.OrderOrchestrationServiceImpl;
 import ru.yandex.practicum.order.service.mapper.OrderMapper;
@@ -31,6 +33,7 @@ import java.util.Map;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
@@ -119,7 +122,7 @@ class OrderOrchestrationServiceImplTest {
     }
 
     @Test
-    @DisplayName("Product-service 404 → OrderProcessingException, резервов нет")
+    @DisplayName("Product-service 404 - OrderProcessingException, резервов нет")
     void create_productNotFound_throwsAndDoesNotReserve() {
         when(productClient.getProductById(1L))
                 .thenThrow(feignException(404, "ProductClient#getProductById(Long)"));
@@ -133,7 +136,7 @@ class OrderOrchestrationServiceImplTest {
     }
 
     @Test
-    @DisplayName("Product-service вернул null → OrderProcessingException")
+    @DisplayName("Product-service вернул null - OrderProcessingException")
     void create_productIsNull_throwsNotFound() {
         when(productClient.getProductById(1L)).thenReturn(null);
 
@@ -146,7 +149,7 @@ class OrderOrchestrationServiceImplTest {
     }
 
     @Test
-    @DisplayName("Неактивный товар → OrderProcessingException, резервов нет")
+    @DisplayName("Неактивный товар - OrderProcessingException, резервов нет")
     void create_productInactive_throwsAndDoesNotReserve() {
         ProductDto inactive = new ProductDto(
                 1L,
@@ -166,7 +169,7 @@ class OrderOrchestrationServiceImplTest {
     }
 
     @Test
-    @DisplayName("Inventory 409 на втором резерве → release первого, заказ не сохраняется")
+    @DisplayName("Inventory 409 на втором резерве - release первого, заказ не сохраняется")
     void create_insufficientStock_releasesFirstReserveAndDoesNotSave() {
         when(productClient.getProductById(1L)).thenReturn(product1);
         when(productClient.getProductById(2L)).thenReturn(product2);
@@ -184,7 +187,7 @@ class OrderOrchestrationServiceImplTest {
     }
 
     @Test
-    @DisplayName("Inventory 404 на втором резерве → release первого, заказ не сохраняется")
+    @DisplayName("Inventory 404 на втором резерве - release первого, заказ не сохраняется")
     void create_reserveFailsWith404_releasesFirstAndThrows() {
         when(productClient.getProductById(1L)).thenReturn(product1);
         when(productClient.getProductById(2L)).thenReturn(product2);
@@ -202,7 +205,7 @@ class OrderOrchestrationServiceImplTest {
     }
 
     @Test
-    @DisplayName("Два item с одним productId → product-service один раз, резерв с суммой")
+    @DisplayName("Два item с одним productId - product-service один раз, резерв с суммой")
     void create_duplicateProductId_mergesQuantityAndCallsProductOnce() {
         request = new CreateOrderRequest(
                 "Иван Петров",
@@ -228,7 +231,7 @@ class OrderOrchestrationServiceImplTest {
     }
 
     @Test
-    @DisplayName("releaseStock падает — оркестратор всё равно бросает OrderProcessingException")
+    @DisplayName("releaseStock падает - оркестратор всё равно бросает OrderProcessingException")
     void create_releaseFails_stillThrows() {
         when(productClient.getProductById(1L)).thenReturn(product1);
         when(productClient.getProductById(2L)).thenReturn(product2);
@@ -245,6 +248,82 @@ class OrderOrchestrationServiceImplTest {
 
         verify(inventoryClient).releaseStock(new ReserveRequest(1L, 2));
         verify(orderService, never()).saveOrder(any());
+    }
+
+    @Test
+    @DisplayName("product-service недоступен - PENDING_CONFIRMATION, товар-заглушка")
+    void create_productServiceUnavailable_savesAsPendingConfirmation() {
+        when(productClient.getProductById(1L))
+                .thenThrow(new ProductServiceUnavailableException(1L, new RuntimeException("timeout")));
+        when(productClient.getProductById(2L))
+                .thenThrow(new ProductServiceUnavailableException(2L, new RuntimeException("timeout")));
+        when(orderService.saveOrder(any(Order.class))).thenAnswer(inv -> {
+            Order o = inv.getArgument(0);
+            o.setId(100L);
+            return OrderMapper.mapToOrderDto(o);
+        });
+
+        orchestrator.create(request);
+
+        ArgumentCaptor<Order> captor = ArgumentCaptor.forClass(Order.class);
+        verify(orderService).saveOrder(captor.capture());
+        Order saved = captor.getValue();
+
+        assertThat(saved.getStatus()).isEqualTo(OrderStatus.PENDING_CONFIRMATION);
+        assertThat(saved.getStatusDetails()).contains("ручной проверки");
+        assertThat(saved.getItems()).hasSize(2);
+        assertThat(saved.getItems().get(0).getProductName())
+                .isEqualTo("Товар id=1 (ожидает проверки)");
+        assertThat(saved.getItems().get(0).getPrice())
+                .isEqualByComparingTo(BigDecimal.ZERO);
+        assertThat(saved.getItems().get(1).getProductName())
+                .isEqualTo("Товар id=2 (ожидает проверки)");
+        assertThat(saved.getTotalPrice()).isEqualByComparingTo(BigDecimal.ZERO);
+    }
+
+    @Test
+    @DisplayName("inventory-service недоступен - PENDING_CONFIRMATION, без компенсации")
+    void create_inventoryServiceUnavailable_savesAsPendingConfirmation() {
+        when(productClient.getProductById(1L)).thenReturn(product1);
+        when(productClient.getProductById(2L)).thenReturn(product2);
+        when(inventoryClient.reserveStock(any(ReserveRequest.class)))
+                .thenThrow(new InventoryServiceUnavailableException(1L, new RuntimeException("circuit open")));
+        when(orderService.saveOrder(any(Order.class))).thenAnswer(inv -> {
+            Order o = inv.getArgument(0);
+            o.setId(100L);
+            return OrderMapper.mapToOrderDto(o);
+        });
+
+        orchestrator.create(request);
+
+        ArgumentCaptor<Order> captor = ArgumentCaptor.forClass(Order.class);
+        verify(orderService).saveOrder(captor.capture());
+        Order saved = captor.getValue();
+
+        assertThat(saved.getStatus()).isEqualTo(OrderStatus.PENDING_CONFIRMATION);
+        assertThat(saved.getStatusDetails()).contains("ручной проверки");
+        assertThat(saved.getTotalPrice()).isEqualByComparingTo(BigDecimal.valueOf(4480.00));
+
+        verify(inventoryClient, never()).releaseStock(any());
+    }
+
+    @Test
+    @DisplayName("Оба сервиса недоступны - PENDING_CONFIRMATION, без компенсации")
+    void create_bothServicesUnavailable_savesAsPendingConfirmation() {
+        when(productClient.getProductById(anyLong()))
+                .thenThrow(new ProductServiceUnavailableException(1L, new RuntimeException("timeout")));
+        when(orderService.saveOrder(any(Order.class))).thenAnswer(inv -> {
+            Order o = inv.getArgument(0);
+            o.setId(100L);
+            return OrderMapper.mapToOrderDto(o);
+        });
+
+        orchestrator.create(request);
+
+        ArgumentCaptor<Order> captor = ArgumentCaptor.forClass(Order.class);
+        verify(orderService).saveOrder(captor.capture());
+        assertThat(captor.getValue().getStatus()).isEqualTo(OrderStatus.PENDING_CONFIRMATION);
+        verifyNoInteractions(inventoryClient);
     }
 
     private static FeignException feignException(int status, String methodKey) {

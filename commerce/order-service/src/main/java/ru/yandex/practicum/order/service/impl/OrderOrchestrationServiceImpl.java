@@ -13,9 +13,12 @@ import ru.yandex.practicum.order.dto.client.ReserveRequest;
 import ru.yandex.practicum.order.entity.Order;
 import ru.yandex.practicum.order.entity.OrderItem;
 import ru.yandex.practicum.order.entity.OrderStatus;
+import ru.yandex.practicum.order.exception.InventoryServiceUnavailableException;
 import ru.yandex.practicum.order.exception.OrderProcessingException;
+import ru.yandex.practicum.order.exception.ProductServiceUnavailableException;
 import ru.yandex.practicum.order.service.OrderOrchestrationService;
 import ru.yandex.practicum.order.service.OrderService;
+import ru.yandex.practicum.order.service.ServiceCallResult;
 import ru.yandex.practicum.order.service.mapper.OrderMapper;
 
 import java.math.BigDecimal;
@@ -42,6 +45,8 @@ public class OrderOrchestrationServiceImpl implements OrderOrchestrationService 
         List<OrderItem> items = order.getItems();
         BigDecimal totalPrice = BigDecimal.ZERO;
 
+        boolean degraded = false;
+
         for (OrderItem item : items) {
             Long productId = item.getProductId();
             Integer quantity = item.getQuantity();
@@ -51,7 +56,20 @@ public class OrderOrchestrationServiceImpl implements OrderOrchestrationService 
             if (products.containsKey(productId)) {
                 product = products.get(productId);
             } else {
-                product = getProduct(productId);
+                ServiceCallResult<ProductDto> productResult = getProduct(productId);
+
+                if (productResult instanceof ServiceCallResult.Failure<ProductDto> failure) {
+                    throw new OrderProcessingException(failure.message());
+                }
+
+                if (productResult instanceof ServiceCallResult.Degraded<ProductDto>) {
+                    degraded = true;
+                    item.setProductName("Товар id=%d (ожидает проверки)".formatted(productId));
+                    item.setPrice(BigDecimal.ZERO);
+                    continue;
+                }
+
+                product = ((ServiceCallResult.Success<ProductDto>) productResult).value();
                 products.put(productId, product);
             }
 
@@ -68,44 +86,65 @@ public class OrderOrchestrationServiceImpl implements OrderOrchestrationService 
             BigDecimal itemPrice = item.getPrice().multiply(BigDecimal.valueOf(item.getQuantity()));
             totalPrice = totalPrice.add(itemPrice);
         }
+
         for (Map.Entry<Long, Integer> entry : reserves.entrySet()) {
-            reserve(entry, succesReserves);
+            ServiceCallResult<Void> reserveResult = reserve(entry.getKey(), entry.getValue());
+
+            if (reserveResult instanceof ServiceCallResult.Failure<Void> failure) {
+                release(succesReserves);
+                throw new OrderProcessingException(failure.message());
+            }
+
+            if (reserveResult instanceof ServiceCallResult.Degraded<Void>) {
+                degraded = true;
+                continue;
+            }
+
+            succesReserves.put(entry.getKey(), entry.getValue());
         }
 
         order.setTotalPrice(totalPrice);
 
-        order.setStatus(OrderStatus.CONFIRMED);
+        if (degraded) {
+            order.setStatus(OrderStatus.PENDING_CONFIRMATION);
+            order.setStatusDetails("Заказ требует ручной проверки: часть данных недоступна");
+        } else {
+            order.setStatus(OrderStatus.CONFIRMED);
+        }
 
         return orderService.saveOrder(order);
     }
 
-    private ProductDto getProduct(Long productId) {
+    private ServiceCallResult<ProductDto> getProduct(Long productId) {
         ProductDto product = null;
         try {
             product = productClient.getProductById(productId);
+        } catch (ProductServiceUnavailableException e) {
+            return new ServiceCallResult.Degraded<>("Не удалось получить данные товара");
         } catch (FeignException e) {
-            throw mapProductException(e, productId);
+            return mapProductException(e, productId);
         }
 
         if (product == null) {
-            throw new OrderProcessingException("Товар с id=%d не найден".formatted(productId));
+            return new ServiceCallResult.Failure<>("Товар с id=%d не найден".formatted(productId));
         }
 
-        if (!product.active()) {
-            throw new OrderProcessingException("Товар с id=%d найден, но неактивен".formatted(productId));
+        if (!Boolean.TRUE.equals(product.active())) {
+            return new ServiceCallResult.Failure<>("Товар с id=%d найден, но неактивен".formatted(productId));
         }
 
-        return product;
+        return new ServiceCallResult.Success<>(product);
     }
 
-    private void reserve(Map.Entry<Long, Integer> entry, Map<Long, Integer> succesReserves) {
+    private ServiceCallResult<Void> reserve(Long productId, Integer quantity) {
         try {
-            ReserveRequest reserveRequest = new ReserveRequest(entry.getKey(), entry.getValue());
+            ReserveRequest reserveRequest = new ReserveRequest(productId, quantity);
             inventoryClient.reserveStock(reserveRequest);
-            succesReserves.put(entry.getKey(), entry.getValue());
+            return new ServiceCallResult.Success<>(null);
+        } catch (InventoryServiceUnavailableException e) {
+            return new ServiceCallResult.Degraded<>("Не удалось зарезервировать товар id=%d".formatted(productId));
         } catch (FeignException e) {
-            release(succesReserves);
-            throw mapReserveException(e, entry.getKey());
+            return mapReserveException(e, productId);
         }
     }
 
@@ -114,49 +153,54 @@ public class OrderOrchestrationServiceImpl implements OrderOrchestrationService 
             try {
                 ReserveRequest request = new ReserveRequest(entry.getKey(), entry.getValue());
                 inventoryClient.releaseStock(request);
+            } catch (InventoryServiceUnavailableException e) {
+                log.error("Не удалось компенсировать зарезервированный товар %d".formatted(entry.getKey()), e);
             } catch (FeignException e) {
-                throw mapReleaseException(e, entry.getKey());
+                log.error("Не удалось компенсировать зарезервированный товар %d".formatted(entry.getKey()), e);
             }
         }
     }
 
-    private OrderProcessingException mapProductException(FeignException exception,
-                                                         Long productId) {
+    private ServiceCallResult<ProductDto> mapProductException(FeignException exception,
+                                                              Long productId) {
         if (exception.status() == 404) {
-            return new OrderProcessingException(
+            return new ServiceCallResult.Failure<>(
                     "Товар с id=%d не найден".formatted(productId)
             );
         }
 
-        return new OrderProcessingException(
-                "Не удалось получить данные товара"
-        );
+        if (exception.status() / 100 == 4) {
+            return new ServiceCallResult.Failure<>(
+                    "Не удалось получить данные товара"
+            );
+        }
+
+        return new ServiceCallResult.Degraded<>("Не удалось получить данные товара");
     }
 
-    private OrderProcessingException mapReserveException(FeignException exception,
-                                                         Long productId) {
+    private ServiceCallResult<Void> mapReserveException(FeignException exception,
+                                                        Long productId) {
         String message;
         if (exception.status() == 404) {
             message = "Складская запись для товара id=%d не найдена".formatted(productId);
             log.warn(message);
-            return new OrderProcessingException(message);
+            return new ServiceCallResult.Failure<>(message);
         }
 
         if (exception.status() == 409) {
             message = "Недостаточно товара id=%d на складе".formatted(productId);
             log.warn(message);
-            return new OrderProcessingException(message);
+            return new ServiceCallResult.Failure<>(message);
+        }
+
+        if (exception.status() / 100 == 4) {
+            message = "Не удалось зарезервировать товар id=%d".formatted(productId);
+            log.warn(message);
+            return new ServiceCallResult.Failure<>(message);
         }
 
         message = "Не удалось зарезервировать товар id=%d".formatted(productId);
         log.error(message);
-        return new OrderProcessingException(message);
-    }
-
-    private OrderProcessingException mapReleaseException(FeignException exception,
-                                                         Long productId) {
-        String message = "Не удалось компенсировать зарезервированный товар %d".formatted(productId);
-        log.error(message);
-        return new OrderProcessingException(message);
+        return new ServiceCallResult.Degraded<>(message);
     }
 }
